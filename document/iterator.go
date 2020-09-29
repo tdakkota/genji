@@ -283,6 +283,7 @@ func (s Stream) GroupBy(groupFn func(d Document) (Value, error)) Stream {
 func (s Stream) Aggregate(aggregatorBuilders ...AggregatorBuilder) Stream {
 	return NewStream(IteratorFunc(func(fn func(d Document) error) error {
 		aggregates := make(map[Value][]Aggregator)
+		firstDocPerGroup := make(map[Value]*FieldBuffer)
 		var groups []Value
 
 		nullValue := NewNullValue()
@@ -302,6 +303,13 @@ func (s Stream) Aggregate(aggregatorBuilders ...AggregatorBuilder) Stream {
 					aggs[i] = builder.NewAggregator(group)
 				}
 				aggregates[group] = aggs
+
+				fb := NewFieldBuffer()
+				err := fb.Copy(d)
+				if err != nil {
+					return err
+				}
+				firstDocPerGroup[group] = fb
 			}
 
 			var err error
@@ -319,7 +327,7 @@ func (s Stream) Aggregate(aggregatorBuilders ...AggregatorBuilder) Stream {
 		}
 
 		for _, group := range groups {
-			fb := NewFieldBuffer()
+			fb := firstDocPerGroup[group]
 			aggs := aggregates[group]
 			for _, agg := range aggs {
 				err = agg.Aggregate(fb)
