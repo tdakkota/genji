@@ -104,7 +104,9 @@ func TestParserCreateTable(t *testing.T) {
 						{Path: parsePath(t, "bar"), Type: document.IntegerValue, IsPrimaryKey: true},
 					},
 				},
-			}, true},
+			}, false},
+		{"With multiple primary keys using invalid table constraint", "CREATE TABLE test(foo integer, bar integer, PRIMARY KEY(foo, not_exists))",
+			query.CreateTableStmt{}, true},
 		{"With all supported fixed size data types",
 			"CREATE TABLE test(d double, b bool)",
 			query.CreateTableStmt{

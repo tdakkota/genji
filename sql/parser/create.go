@@ -112,33 +112,39 @@ func (p *Parser) parseFieldConstraints(info *database.TableInfo) error {
 		}
 	}
 
-	// Parse required ) token.
-	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != scanner.RPAREN {
-		return newParseError(scanner.Tokstr(tok, lit), []string{")"}, pos)
-	}
-
 	compositeKeys, err := p.parseTableConstraint()
 	if err != nil {
 		return err
 	}
 
+	// Parse required ) token.
+	if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != scanner.RPAREN {
+		return newParseError(scanner.Tokstr(tok, lit), []string{")"}, pos)
+	}
+
+	if compositeKeys != nil {
+		for i, fc := range info.FieldConstraints {
+			if _, ok := compositeKeys[fc.Path.String()]; ok {
+				info.FieldConstraints[i].IsPrimaryKey = true
+			}
+		}
+	}
+
 	// ensure only one primary key
 	var pkCount int
 	for i, fc := range info.FieldConstraints {
-		if compositeKeys != nil {
-			if _, ok := compositeKeys[fc.Path.String()]; ok {
-				fc.IsPrimaryKey = true
-			}
-		}
-
 		if fc.IsPrimaryKey {
 			info.PrimaryKeys = append(info.PrimaryKeys, i)
 			pkCount++
 		}
 	}
 
-	if pkCount > 1 && len(compositeKeys) < 1 {
+	if pkCount > 1 && len(compositeKeys) == 0 {
 		return &ParseError{Message: fmt.Sprintf("only one primary key is allowed, got %d", pkCount)}
+	}
+
+	if len(compositeKeys) > 0 && !(pkCount == len(compositeKeys) && pkCount == len(info.PrimaryKeys)) {
+		return &ParseError{Message: "composite primary key constraint is invalid"}
 	}
 
 	return nil
