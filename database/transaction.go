@@ -94,7 +94,7 @@ func (tx *Transaction) CreateTable(name string, info *TableInfo) error {
 		info = new(TableInfo)
 	}
 
-	info.tableName = name
+	info.init(name)
 	err := tx.tableInfoStore.Insert(tx, name, info)
 	if err != nil {
 		return err

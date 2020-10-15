@@ -117,18 +117,61 @@ func (p *Parser) parseFieldConstraints(info *database.TableInfo) error {
 		return newParseError(scanner.Tokstr(tok, lit), []string{")"}, pos)
 	}
 
+	compositeKeys, err := p.parseTableConstraint()
+	if err != nil {
+		return err
+	}
+
 	// ensure only one primary key
 	var pkCount int
-	for _, fc := range info.FieldConstraints {
+	for i, fc := range info.FieldConstraints {
+		if compositeKeys != nil {
+			if _, ok := compositeKeys[fc.Path.String()]; ok {
+				fc.IsPrimaryKey = true
+			}
+		}
+
 		if fc.IsPrimaryKey {
+			info.PrimaryKeys = append(info.PrimaryKeys, i)
 			pkCount++
 		}
 	}
-	if pkCount > 1 {
+
+	if pkCount > 1 && len(compositeKeys) < 1 {
 		return &ParseError{Message: fmt.Sprintf("only one primary key is allowed, got %d", pkCount)}
 	}
 
 	return nil
+}
+
+func (p *Parser) parsePathSet() (map[string]struct{}, error) {
+	idents, err := p.parsePathList()
+	if err != nil {
+		return nil, err
+	}
+
+	m := make(map[string]struct{}, len(idents))
+	for i := range idents {
+		m[idents[i].String()] = struct{}{}
+	}
+
+	return m, err
+}
+
+func (p *Parser) parseTableConstraint() (map[string]struct{}, error) {
+	tok, _, _ := p.ScanIgnoreWhitespace()
+	switch tok {
+	case scanner.PRIMARY:
+		// Parse "KEY"
+		if tok, pos, lit := p.ScanIgnoreWhitespace(); tok != scanner.KEY {
+			return nil, newParseError(scanner.Tokstr(tok, lit), []string{"KEY"}, pos)
+		}
+
+		return p.parsePathSet()
+	default:
+		p.Unscan()
+		return nil, nil
+	}
 }
 
 func (p *Parser) parseFieldConstraint(fc *database.FieldConstraint) error {

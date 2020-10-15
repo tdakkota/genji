@@ -23,6 +23,7 @@ func TestParserCreateTable(t *testing.T) {
 			query.CreateTableStmt{
 				TableName: "test",
 				Info: database.TableInfo{
+					PrimaryKeys: []int{0},
 					FieldConstraints: []database.FieldConstraint{
 						{Path: parsePath(t, "foo"), Type: document.IntegerValue, IsPrimaryKey: true},
 					},
@@ -63,6 +64,7 @@ func TestParserCreateTable(t *testing.T) {
 			query.CreateTableStmt{
 				TableName: "test",
 				Info: database.TableInfo{
+					PrimaryKeys: []int{0},
 					FieldConstraints: []database.FieldConstraint{
 						{Path: parsePath(t, "foo"), Type: document.IntegerValue, IsPrimaryKey: true, IsNotNull: true},
 					},
@@ -72,6 +74,7 @@ func TestParserCreateTable(t *testing.T) {
 			query.CreateTableStmt{
 				TableName: "test",
 				Info: database.TableInfo{
+					PrimaryKeys: []int{0},
 					FieldConstraints: []database.FieldConstraint{
 						{Path: parsePath(t, "foo"), Type: document.IntegerValue, IsPrimaryKey: true, IsNotNull: true},
 					},
@@ -81,6 +84,7 @@ func TestParserCreateTable(t *testing.T) {
 			query.CreateTableStmt{
 				TableName: "test",
 				Info: database.TableInfo{
+					PrimaryKeys: []int{0},
 					FieldConstraints: []database.FieldConstraint{
 						{Path: parsePath(t, "foo"), Type: document.IntegerValue, IsPrimaryKey: true},
 						{Path: parsePath(t, "bar"), Type: document.IntegerValue, IsNotNull: true},
@@ -90,6 +94,17 @@ func TestParserCreateTable(t *testing.T) {
 			}, false},
 		{"With multiple primary keys", "CREATE TABLE test(foo PRIMARY KEY, bar PRIMARY KEY)",
 			query.CreateTableStmt{}, true},
+		{"With multiple primary keys using table constraint", "CREATE TABLE test(foo integer, bar integer, PRIMARY KEY(foo, bar))",
+			query.CreateTableStmt{
+				TableName: "test",
+				Info: database.TableInfo{
+					PrimaryKeys: []int{0, 1},
+					FieldConstraints: []database.FieldConstraint{
+						{Path: parsePath(t, "foo"), Type: document.IntegerValue, IsPrimaryKey: true},
+						{Path: parsePath(t, "bar"), Type: document.IntegerValue, IsPrimaryKey: true},
+					},
+				},
+			}, true},
 		{"With all supported fixed size data types",
 			"CREATE TABLE test(d double, b bool)",
 			query.CreateTableStmt{

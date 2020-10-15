@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/genjidb/genji/document"
@@ -64,6 +65,48 @@ func (f *FieldConstraint) ScanDocument(d document.Document) error {
 	return nil
 }
 
+type CompositeKey struct {
+	fields []*FieldConstraint
+}
+
+func (c *CompositeKey) GetValue(d document.Document) (document.Value, error) {
+	buf := document.NewFieldBuffer()
+
+	for _, field := range c.fields {
+		v, err := field.Path.GetValue(d)
+		if err != nil {
+			return document.Value{}, err
+		}
+
+		buf.Add(field.Path.String(), v)
+	}
+
+	return document.NewDocumentValue(buf), nil
+}
+
+func (c *CompositeKey) PathsString() string {
+	b := new(strings.Builder)
+	b.Grow(len(c.fields) * 2) // at least one character in path + comma
+
+	for i := range c.fields {
+		b.WriteString(c.fields[i].Path.String())
+		if i != len(c.fields)-1 {
+			b.WriteByte(',')
+		}
+	}
+
+	return b.String()
+}
+
+func (c *CompositeKey) Paths() []document.ValuePath {
+	paths := make([]document.ValuePath, len(c.fields))
+	for i, field := range c.fields {
+		paths[i] = field.Path
+	}
+
+	return paths
+}
+
 // TableInfo contains information about a table.
 type TableInfo struct {
 	// name of the table.
@@ -74,20 +117,55 @@ type TableInfo struct {
 	// if non-zero, this tableInfo has been created during the current transaction.
 	// it will be removed if the transaction is rolled back or set to false if its commited.
 	transactionID int64
+	// stores indexes of primary keys
+	PrimaryKeys []int
 
 	FieldConstraints []FieldConstraint
 }
 
-// GetPrimaryKey returns the field constraint of the primary key.
-// Returns nil if there is no primary key.
-func (ti *TableInfo) GetPrimaryKey() *FieldConstraint {
-	for _, f := range ti.FieldConstraints {
-		if f.IsPrimaryKey {
-			return &f
+func (ti *TableInfo) init(tableName string) {
+	ti.tableName = tableName
+	ti.collectPrimaryKeys()
+}
+
+func (ti *TableInfo) collectPrimaryKeys() {
+	if len(ti.PrimaryKeys) == 0 { // uninitialized
+		for i := range ti.FieldConstraints {
+			if ti.FieldConstraints[i].IsPrimaryKey {
+				ti.PrimaryKeys = append(ti.PrimaryKeys, i)
+			}
 		}
 	}
+}
 
-	return nil
+// GetPrimaryKey returns the field constraint of the primary key.
+// Returns nil if there is no primary key or if primary key is composite.
+func (ti *TableInfo) GetPrimaryKey() *FieldConstraint {
+	if len(ti.PrimaryKeys) != 1 {
+		return nil
+	}
+
+	f := ti.FieldConstraints[0]
+	return &f
+}
+
+// GetCompositePrimaryKey returns the composite primary key.
+// Returns nil if there is no primary key or if primary key is not composite.
+func (ti *TableInfo) GetCompositePrimaryKey() *CompositeKey {
+	if len(ti.PrimaryKeys) < 2 {
+		return nil
+	}
+
+	result := make([]*FieldConstraint, len(ti.PrimaryKeys))
+	for i, constraintIndex := range ti.PrimaryKeys {
+		result[i] = &ti.FieldConstraints[constraintIndex]
+	}
+
+	return &CompositeKey{fields: result}
+}
+
+func (ti *TableInfo) HasPrimaryKey() bool {
+	return len(ti.PrimaryKeys) > 0
 }
 
 // ToDocument turns ti into a document.
@@ -137,7 +215,15 @@ func (ti *TableInfo) ScanDocument(d document.Document) error {
 	ti.FieldConstraints = make([]FieldConstraint, l)
 
 	err = ar.Iterate(func(i int, value document.Value) error {
-		return ti.FieldConstraints[i].ScanDocument(value.V.(document.Document))
+		err := ti.FieldConstraints[i].ScanDocument(value.V.(document.Document))
+		if err != nil {
+			return err
+		}
+
+		if ti.FieldConstraints[i].IsPrimaryKey {
+			ti.PrimaryKeys = append(ti.PrimaryKeys, i)
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -320,7 +406,7 @@ func (t *tableInfoStore) loadAllTableInfo(tx engine.Transaction) error {
 
 	t.tableInfos[indexStoreName] = TableInfo{
 		storeName: []byte(indexStoreName),
-		readOnly: true,
+		readOnly:  true,
 		FieldConstraints: []FieldConstraint{
 			{
 				Path: document.ValuePath{

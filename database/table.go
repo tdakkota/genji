@@ -395,6 +395,18 @@ func (t *Table) generateKey(d document.Document) ([]byte, error) {
 		// it no primary key type is specified,
 		// encode keys regardless of type.
 		return key.AppendValue(nil, v)
+	} else if cpk := ti.GetCompositePrimaryKey(); cpk != nil {
+		v, err := cpk.GetValue(d)
+		if err == document.ErrFieldNotFound {
+			return nil, fmt.Errorf("missing primary key at paths %s", cpk.PathsString())
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		// it no primary key type is specified,
+		// encode keys regardless of type.
+		return key.AppendValue(nil, v)
 	}
 
 	docid, err := t.Store.NextSequence()
@@ -417,9 +429,7 @@ func (t *Table) ValidateConstraints(d document.Document) (document.Document, err
 		return nil, err
 	}
 
-	pk := info.GetPrimaryKey()
-
-	if len(info.FieldConstraints) == 0 && pk == nil {
+	if len(info.FieldConstraints) == 0 && !info.HasPrimaryKey() {
 		return d, nil
 	}
 
@@ -432,10 +442,21 @@ func (t *Table) ValidateConstraints(d document.Document) (document.Document, err
 		return nil, err
 	}
 
+	pk := info.GetPrimaryKey()
 	if pk != nil {
 		err = validateConstraint(&fb, pk)
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	cpk := info.GetCompositePrimaryKey()
+	if cpk != nil {
+		for _, fc := range cpk.fields {
+			err := validateConstraint(&fb, fc)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 

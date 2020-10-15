@@ -87,9 +87,16 @@ func (k PKFunc) Eval(ctx EvalStack) (document.Value, error) {
 		return document.Value{}, errors.New("no table specified")
 	}
 
-	pk := ctx.Info.GetPrimaryKey()
-	if pk != nil {
-		return pk.Path.GetValue(ctx.Document)
+	if ctx.Info.HasPrimaryKey() {
+		pk := ctx.Info.GetPrimaryKey()
+		if pk != nil {
+			return pk.Path.GetValue(ctx.Document)
+		}
+
+		cpk := ctx.Info.GetCompositePrimaryKey()
+		if cpk != nil {
+			return cpk.GetValue(ctx.Document)
+		}
 	}
 
 	i, _ := binary.Uvarint(ctx.Document.(document.Keyer).Key())
